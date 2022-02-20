@@ -62,6 +62,19 @@ Deno.test("DB - Query Relation", () => {
     if (result?.length !== 5) throw new Error("Query failed");
 });
 
+Deno.test("DB - Modify", () => {
+    const db = new GraphDB<Person, RelationType>();
+
+    const x = db.insert(p);
+
+    db.modify(x, (node) => {
+        node.props.email = "New Email";
+    });
+
+    if (!(db.getProps(x)?.email === "New Email"))
+        throw new Error("Modification failed");
+});
+
 Deno.test("DB - Insert 1000", () => {
     const db = new GraphDB<Person, null>();
 
