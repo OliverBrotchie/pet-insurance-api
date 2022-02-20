@@ -12,13 +12,11 @@ The exercise is to build the endpoints to allow a client to:
 
 ## Implementation
 
-A GraphQL service would fit this application best, however, this is not possible as it is supposed to be a restful API.
-Therefore, this API will be built using Deno as a runtime and Drash as a framework. 
-
-Ideally, an in-memory caching solution would be used over the top of a traditional SQL database in a read/write-through model, but I have decided to challenge myself to create a custom graph database. 
+This API will be built using Deno as a runtime and Drash as a framework. 
+Ideally, an in-memory caching solution would be used over the top of a traditional SQL database in a read/write-through model, however I have decided to challenge myself to also create a custom in-memory graph database. 
 
 This provides a few benefits:
-- It allows for simple deployment to both Github Actions and local development environments.
+- It allows for simple deployment to both Github Actions and local development environments (without the need for containerization).
 - It gives me a more complex challenge than creating a simple API.
 - It gives me a better way to display technical ability.
 
