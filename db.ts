@@ -1,3 +1,5 @@
+import { Person, Pet, Claim, RelationType } from "./interfaces.ts";
+
 /**
  * The object representation of a node in the store - not to be used directly.
  *
@@ -5,18 +7,18 @@
  * objects so set.has() will not work; hense it is more intuative and performant to use as an array
  * when querying._
  */
-interface Node<T> {
+export interface Node<T> {
     edges: Array<number>;
     props: T;
 }
 
-interface Edge<R> {
+export interface Edge<R> {
     to: number;
     from: number;
     type?: R;
 }
 
-type Direction = "to" | "from";
+export type Direction = "to" | "from";
 
 /**
  * A bi-directional graph database of nodes and edges.
@@ -250,3 +252,5 @@ export class GraphDB<T, R> {
         return result;
     }
 }
+
+export const db = new GraphDB<Person | Pet | Claim, RelationType>();

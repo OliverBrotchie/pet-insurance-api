@@ -1,36 +1,68 @@
 import * as Drash from "https://deno.land/x/drash@v2.5.3/mod.ts";
 import { Person, Pet, Claim, RelationType } from "./interfaces.ts";
-import { GraphDB } from "./db.ts";
+import { db, Node } from "./db.ts";
 
-const db = new GraphDB<Person | Pet | Claim, RelationType>();
+interface Post<T> {
+    relationID: number;
+    params: T;
+}
+
+interface Patch<T> {
+    id: number;
+    params: unknown;
+}
+
+function deleteNode(request: Drash.Request, response: Drash.Response): void {
+    const id = parseInt(request.bodyParam("id") as string);
+    if (id) {
+        if (db.remove(id)) return response.text("OK", 200);
+        return response.text("Not Found", 404);
+    }
+}
+
+function getRelations(
+    id: number,
+    type: RelationType
+): Array<Person | Pet | Claim> | undefined {
+    return db
+        .query(id, (_, r) => {
+            return r === type;
+        })
+        ?.map((e) => e.props);
+}
 
 export class Pets extends Drash.Resource {
     public paths = ["/pets", "/pets/:id", "/pets/:id/claims"];
 
     // List a pet or all claims of a pet
     public GET(request: Drash.Request, response: Drash.Response): void {
-        if (request.pathParam("id")) {
-            const id = parseInt(request.pathParam("id") as string);
-            const pet = db.get(id);
+        const id = parseInt(request.pathParam("id") as string);
+        if (!id) return response.text("Bad Request", 400);
 
-            if (!pet) return response.text("Not Found", 404);
+        const pet = db.get(id);
+        if (!pet) return response.text("Not Found", 404);
 
-            // List all claims of a pet
-            if (request.url.includes("claims")) {
-                db.query(id, (_, r) => {
-                    return r === RelationType.Claim;
-                })?.map((e) => e.props);
-            }
-
-            return response.json(pet.props, 200);
+        // List all claims of a pet
+        if (request.url.includes("claims")) {
+            return response.json(
+                {
+                    claims: getRelations(id, RelationType.Claim),
+                },
+                200
+            );
         }
 
-        return response.text("Bad Request", 400);
+        return response.json(pet.props, 200);
     }
 
     // Create a new pet
-    public POST(request: Drash.Request, response: Drash.Response): void {
+    public async POST(
+        request: Drash.Request,
+        response: Drash.Response
+    ): Promise<void> {
         if (request.url === "/pets") {
+            const params = await request.json();
+
             // If correct property structure
             // create new Pet on relation to UserID
             // retun OK
@@ -48,7 +80,10 @@ export class Pets extends Drash.Resource {
 
     // Remove a Pet
     public DELETE(request: Drash.Request, response: Drash.Response): void {
-        return response.text("Im a teapot", 418); // Stub
+        if (request.url.includes("claims"))
+            return response.text("Bad Request", 400);
+
+        return deleteNode(request, response);
     }
 }
 
@@ -57,7 +92,13 @@ export class Claims extends Drash.Resource {
 
     // Get a claim via ID
     public GET(request: Drash.Request, response: Drash.Response): void {
-        return response.text("Im a teapot", 418); // Stub
+        const id = parseInt(request.pathParam("id") as string);
+        if (!id) return response.text("Bad Request", 400);
+
+        const claim = db.get(id);
+        if (!claim) return response.text("Not Found", 404);
+
+        return response.json(claim.props, 200);
     }
 
     // Create a new claim given a petID
@@ -72,7 +113,7 @@ export class Claims extends Drash.Resource {
 
     // Delete a claim
     public DELETE(request: Drash.Request, response: Drash.Response): void {
-        return response.text("Im a teapot", 418); // Stub
+        deleteNode(request, response);
     }
 }
 
@@ -80,16 +121,18 @@ export class Users extends Drash.Resource {
     public paths = ["/user/:id/pets", "/user/:id/claims"]; // Excluding user creation
 
     public GET(request: Drash.Request, response: Drash.Response): void {
+        const id = parseInt(request.pathParam("id") as string);
+        if (!id) return response.text("Bad Request", 400);
+
+        const pets = getRelations(id, RelationType.Owner);
+        if (!pets) return response.text("Not Found", 404);
+
         if (request.url.includes("/pets")) {
-            // list all pets of a user
-            // See Pets::GET
+            return response.json({ pets: pets }, 200);
         }
 
         if (request.url.includes("/claims")) {
-            // list all claims from every pet a user has
-            // (double join query)
+            // double join
         }
-
-        return response.text("Im a teapot", 418);
     }
 }
