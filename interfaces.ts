@@ -8,6 +8,7 @@ export interface Pet {
     name: string;
     dob: Date;
     type: PetType;
+    insurance: InsuranceStatus;
 }
 
 export enum PetType {
@@ -15,6 +16,25 @@ export enum PetType {
     Dog,
     Lizard,
     Other,
+}
+
+export enum InsuranceStatus {
+    FullyCovered,
+    AccidentOnly,
+    NoCoverage,
+}
+
+export interface Claim {
+    description: string;
+    date: Date;
+    cost: number;
+    status: ClaimStatus;
+}
+
+export enum ClaimStatus {
+    Pending,
+    Approved,
+    Rejected,
 }
 
 export enum RelationType {

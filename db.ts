@@ -1,6 +1,3 @@
-// deno-lint-ignore-file no-empty
-// An interesting problem:
-
 /**
  * The object representation of a node in the store - not to be used directly.
  *
@@ -8,24 +5,28 @@
  * objects so set.has() will not work; hense it is more intuative and performant to use as an array
  * when querying._
  */
-interface Node<T, R> {
-    edges: Array<Relation<R>>;
+interface Node<T> {
+    edges: Array<number>;
     props: T;
 }
 
-interface Relation<R> {
-    id: number;
+interface Edge<R> {
+    to: number;
+    from: number;
     type?: R;
 }
 
+type Direction = "to" | "from";
+
 /**
- * A graph-like database of nodes and edges.
+ * A bi-directional graph database of nodes and edges.
  *
- * _Note: Nodes are stored in a flat map of IDs to
+ * _Note: vertecies/edges are stored in a flat map of IDs to
  * improve performance as JS has no concept of references._
  */
 export class GraphDB<T, R> {
-    private store = new Map<number, Node<T, R>>();
+    private vertecies = new Map<number, Node<T>>();
+    private edges = new Map<number, Edge<R>>();
 
     /**
      * Insert a new node into the database.
@@ -33,9 +34,9 @@ export class GraphDB<T, R> {
      * @returns The ID of the new node
      */
     insert(props: T): number {
-        const id = this.store.size + 1; // Autoincrementing ID
+        const id = this.vertecies.size + 1; // Autoincrementing ID
 
-        this.store.set(id, {
+        this.vertecies.set(id, {
             edges: [],
             props,
         });
@@ -50,15 +51,16 @@ export class GraphDB<T, R> {
      * @returns True if the edge was inserted
      */
     addRelation(from: number, to: number, relation?: R): boolean {
-        const head = this.store.get(from);
-        const target = this.store.get(to);
+        const origin = this.vertecies.get(from);
+        const target = this.vertecies.get(to);
 
-        if (head && target) {
-            head.edges.push({
-                id: to,
-                type: relation,
-            });
-            this.store.set(from, head);
+        if (origin && target) {
+            const edgeID = this.edges.size + 1;
+            origin.edges.push(edgeID);
+            target.edges.push(edgeID);
+            this.vertecies.set(from, origin);
+            this.vertecies.set(to, target);
+            this.edges.set(edgeID, { from, to, type: relation });
             return true;
         }
 
@@ -73,41 +75,53 @@ export class GraphDB<T, R> {
      * @returns The ID of the new node
      */
     insertOnRelation(from: number, props: T, relation?: R): number | undefined {
-        const head = this.store.get(from);
-        if (!head) return;
+        const origin = this.vertecies.get(from);
+        if (!origin) return;
 
-        const id = this.insert(props);
-        head.edges.push({
-            id,
-            type: relation,
+        // Autoincrementing IDs
+        const edgeID = this.edges.size + 1;
+        const to = this.vertecies.size + 1;
+
+        origin.edges.push(edgeID);
+        this.vertecies.set(from, origin);
+        this.vertecies.set(to, {
+            edges: [edgeID],
+            props,
         });
-        this.store.set(from, head);
+        this.edges.set(edgeID, { from, to, type: relation });
 
-        return id;
+        return to;
     }
 
     /**
-     * Get the properties of a node from the database.
+     * Get the a node rom the database.
      * @param id: The ID of the node to get
-     * @returns The properties of the node if it exists
+     * @returns The node if it exists
      */
-    getProps(id: number): T | undefined {
-        return this.store.get(id)?.props;
+    get(id: number): Node<T> | undefined {
+        return this.vertecies.get(id);
     }
 
     /**
-     * Get the edges of a node from the database.
-     * @param id: The ID of the node to get
-     * @returns The edges of the node if it exists
+     * Get the an edge from the database.
+     * @param id: The ID of the edge to get
+     * @returns The edge if it exists
      */
-    getEdges(id: number): Array<Relation<R>> | undefined {
-        const node = this.store.get(id);
-        if (!node) return;
+    getEdge(id: number): Edge<R> | undefined {
+        return this.edges.get(id);
+    }
 
-        node.edges = node.edges.filter((e) => this.store.has(e.id));
-        this.store.set(id, node);
+    /**
+     * Get the related vertex on an edge
+     * @param vertexID the original node
+     * @param edgeID the id of the edge
+     * @returns the related vertex
+     */
+    getRelation(vertexID: number, edgeID: number): Node<T> | undefined {
+        const edge = this.edges.get(edgeID);
+        if (!edge) return;
 
-        return node.edges;
+        return this.vertecies.get(edge.from === vertexID ? edge.to : edge.from);
     }
 
     /**
@@ -117,7 +131,43 @@ export class GraphDB<T, R> {
      * @returns True if the node was found and deleted
      */
     remove(id: number): boolean {
-        return this.store.delete(id);
+        const node = this.vertecies.get(id);
+        if (!node) return false;
+
+        // Remove all edges and references to said edges
+        for (const e of node.edges) {
+            const edge = this.edges.get(e) as Edge<R>;
+            const direction = edge.from === id ? edge.to : edge.from;
+
+            const v = this.vertecies.get(direction) as Node<T>;
+            v.edges = v.edges.filter((value) => value !== e);
+
+            this.vertecies.set(direction, v);
+            this.edges.delete(e);
+        }
+        return this.vertecies.delete(id);
+    }
+
+    /**
+     * Removes an edge (relation) from the database.
+     *
+     * @param id: The ID of the node to delete
+     * @returns True if the node was found and deleted
+     */
+    removeRelation(id: number): boolean {
+        const edge = this.edges.get(id);
+        if (!edge) return false;
+
+        this.removeLocalEdge(id, edge.from);
+        this.removeLocalEdge(id, edge.to);
+        return this.edges.delete(id);
+    }
+
+    // Remove reference to an edge from vertex
+    private removeLocalEdge(edgeID: number, vertexID: number) {
+        const node = this.vertecies.get(vertexID) as Node<T>;
+        node.edges = node.edges.filter((e) => e !== edgeID);
+        this.vertecies.set(vertexID, node);
     }
 
     /**
@@ -126,24 +176,42 @@ export class GraphDB<T, R> {
      * @param fn: Function to modify the node
      * @returns True if the node was found and modified
      */
-    modify(id: number, fn: (node: Node<T, R>) => void): boolean {
-        const node = this.store.get(id);
+    modifyProps(id: number, fn: (n: T) => void): boolean {
+        const node = this.vertecies.get(id);
         if (!node) return false;
 
+        const props = node.props;
         try {
-            fn(node);
-            this.store.set(id, node);
-        } catch (_) {
+            fn(props);
+        } catch {
             return false;
         }
+        node.props = props;
+        this.vertecies.set(id, node);
+
+        return true;
+    }
+
+    /**
+     * Modify the relation type of an edge in the database.
+     * @param id: The ID of the edge to modify
+     * @param relation: The new relation type
+     * @returns True if the edge was found and modified
+     */
+    modifyRelation(id: number, relation: R): boolean {
+        const edge = this.edges.get(id);
+        if (!edge) return false;
+
+        edge.type = relation;
+        this.edges.set(id, edge);
 
         return true;
     }
 
     /**
      * Query the database for nodes.
-     * @id:
-     * @param fn: Function to filter nodes
+     * @param id - The ID of the node you wish to query
+     * @param fn -  Function to filter nodes
      * @returns An array of nodes that match the query
      * @example
      * const db = new GraphDB<string, string>();
@@ -156,33 +224,27 @@ export class GraphDB<T, R> {
      *     return relationship.type === "Friend";
      *   })
      * );
-     *
      */
     query(
         id: number,
-        fn: (relation: Relation<R>, node: Node<T, R>) => boolean
-    ): Array<Node<T, R>> | undefined {
-        const node = this.store.get(id);
-        if (!node) return;
+        fn: (edgeNode: Node<T>, relation: R | undefined) => boolean,
+        direction?: Direction
+    ): Array<Node<T>> | undefined {
+        const vertex = this.vertecies.get(id);
+        if (!vertex) return;
 
-        const result = new Array<Node<T, R>>();
-        const prunes = new Set<number>();
+        const result: Array<Node<T>> = [];
 
-        for (const relation of node.edges) {
-            const node = this.store.get(relation.id);
-            if (node) {
-                try {
-                    if (fn(relation, node)) result.push(node);
-                } catch (_) {}
-            } else {
-                prunes.add(relation.id);
-            }
-        }
+        for (const edgeID of vertex.edges) {
+            const edgeNode = this.getRelation(id, edgeID) as Node<T>;
+            const relation = this.edges.get(edgeID) as Edge<R>;
 
-        // Remove edges that lead to non-existent nodes
-        if (prunes.size > 0) {
-            node.edges = node.edges.filter((e) => !prunes.has(e.id));
-            this.store.set(id, node);
+            // Check that its in the correct direction or no direction supplied
+            if (
+                ((direction && relation[direction] === id) || !direction) &&
+                fn(edgeNode, relation.type)
+            )
+                result.push(edgeNode);
         }
 
         return result;
